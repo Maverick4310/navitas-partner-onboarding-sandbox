@@ -8,7 +8,7 @@
  */
 
 const whois = require('whois-json');
-const dns = require('dns').promises;
+const dns = require('dns').promises; 
 
 /**
  * POST /verifyWebsite
