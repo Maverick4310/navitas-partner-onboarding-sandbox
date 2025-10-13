@@ -6,7 +6,7 @@
  * Purpose:
  *  - Receives partner onboarding JSON payloads
  *  - Forwards them to Salesforce Apex REST endpoint
- *  - Provides website legitimacy verification service
+ *  - Provides website legitimacy verification service (IP2WHOIS)
  * --------------------------------------------------------
  */
 
@@ -32,7 +32,7 @@ app.get('/ping', (req, res) => {
 // === Partner Onboarding endpoint ===
 app.post('/onboarding', forwardToSalesforce);
 
-// === Website Verification endpoint ===
+// === Website Verification endpoint (IP2WHOIS) ===
 app.post('/verifyWebsite', verifyWebsiteHandler);
 
 // === Start server ===
