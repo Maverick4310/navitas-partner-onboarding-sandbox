@@ -138,4 +138,8 @@ async function verifyWebsiteHandler(req, res) {
     return res.status(200).json(result);
   } catch (err) {
     console.error('verifyWebsiteHandler error:', err.message);
-    return res.status(500).
+    return res.status(500).json({ error: true, message: err.message });
+  }
+}
+
+module.exports = { verifyWebsiteHandler };
