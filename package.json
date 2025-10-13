@@ -1,5 +1,5 @@
 {
-  "name": "navitas-partner-onboarding-proxy",
+  "name": "navitas-partner-onboarding-proxy", 
   "version": "1.0.0",
   "description": "Proxy for forwarding partner onboarding requests to Salesforce.",
   "main": "index.js",
