@@ -11,6 +11,8 @@
 // ------------------------------------------------------------
 
 import fetch from 'node-fetch';
+module.exports = { verifyEmailHandler };
+
 
 export async function verifyEmail(req, res) {
   try {
