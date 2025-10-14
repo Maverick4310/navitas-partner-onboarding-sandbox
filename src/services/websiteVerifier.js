@@ -16,6 +16,16 @@
 const axios = require('axios');
 const dns = require('dns').promises;
 
+// === helper to test HTTPS even when "https://" missing ===
+async function checkHttpsAvailable(domain) {
+  try {
+    const res = await axios.get(`https://${domain}`, { timeout: 5000, maxRedirects: 2 });
+    return res.status >= 200 && res.status < 400;
+  } catch {
+    return false;
+  }
+}
+
 async function verifyWebsiteHandler(req, res) {
   const { website } = req.body || {};
   if (!website) {
@@ -61,6 +71,7 @@ async function verifyWebsiteHandler(req, res) {
       }
     }
 
+    // --- Domain age ---
     const ageDays =
       whoisData.domain_age ||
       (whoisData.create_date
@@ -75,17 +86,33 @@ async function verifyWebsiteHandler(req, res) {
       else score += 20;
     } else {
       summary.push('Domain age unavailable');
+      score += 20; // assume mature if not returned (GDPR masking)
     }
 
-    if (whoisData.registrar?.name) {
-      summary.push(`Registrar: ${whoisData.registrar.name}`);
+    // --- Registrar ---
+    const registrarName = whoisData.registrar?.name || whoisData.registrar_name;
+    if (registrarName) {
+      summary.push(`Registrar: ${registrarName}`);
+      if (/corporate|markmonitor|csc|com laude|safenames/i.test(registrarName)) score += 5;
     }
+
+    // --- Nameservers ---
     if (whoisData.nameservers?.length) {
-      summary.push(`Nameservers: ${whoisData.nameservers.slice(0, 2).join(', ')}`);
+      const nsList = whoisData.nameservers.slice(0, 2).join(', ');
+      summary.push(`Nameservers: ${nsList}`);
+      const nsText = whoisData.nameservers.join(' ').toLowerCase();
+      if (nsText.includes('cloudflare') || nsText.includes('google') || nsText.includes('aws') || nsText.includes('nsone')) {
+        score += 3;
+      }
     }
 
-    // === 2) HTTPS Check ===
-    if (website.toLowerCase().startsWith('https://')) {
+    // === 2) HTTPS Check (robust) ===
+    let httpsOk = website.toLowerCase().startsWith('https://');
+    if (!httpsOk) {
+      httpsOk = await checkHttpsAvailable(cleanDomain);
+    }
+
+    if (httpsOk) {
       summary.push('Valid HTTPS detected');
       score += 10;
     } else {
@@ -108,7 +135,7 @@ async function verifyWebsiteHandler(req, res) {
             ],
             platformTypes: ['ANY_PLATFORM'],
             threatEntryTypes: ['URL'],
-            threatEntries: [{ url: website }]
+            threatEntries: [{ url: `https://${cleanDomain}` }]
           }
         };
         const gsbResp = await axios.post(gsbUrl, gsbBody, { timeout: 8000 });
