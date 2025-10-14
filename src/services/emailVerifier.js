@@ -73,7 +73,7 @@ const verifyEmailHandler = async (req, res) => {
     // === 4. Fetch WHOIS data from IP2WHOIS ===
     let whoisData = null;
     try {
-      const whoisUrl = `https://api.ip2whois.com/v2?key=${process.env.IP2WHOIS_API_KEY}&domain=${parsedDomain}`;
+      const whoisUrl = `https://api.ip2whois.com/v2?key=${process.env.IP2WHOIS_KEY}&domain=${parsedDomain}`;
       const whoisRes = await fetch(whoisUrl);
       if (whoisRes.ok) {
         whoisData = await whoisRes.json();
