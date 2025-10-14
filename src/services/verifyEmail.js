@@ -1,20 +1,20 @@
-// verifyEmail.js
-// ------------------------------------------------------------
-// Purpose:
-//   - Validate an email address using EmailRep reputation API
-//   - Return standardized JSON for Salesforce consumption
-// ------------------------------------------------------------
-// Dependencies:
-//   - Environment variable: EMAILREP_API_KEY
-// ------------------------------------------------------------
-// Version: 1.0 (2025-10-14)
-// ------------------------------------------------------------
+/**
+ * emailVerifier.js
+ * ------------------------------------------------------------
+ * Purpose:
+ *   - Validate an email address using EmailRep reputation API
+ *   - Return standardized JSON for Salesforce consumption
+ * ------------------------------------------------------------
+ * Dependencies:
+ *   - Environment variable: EMAILREP_API_KEY
+ * ------------------------------------------------------------
+ * Version: 1.0 (2025-10-14)
+ * ------------------------------------------------------------
+ */
 
-import fetch from 'node-fetch';
-module.exports = { verifyEmailHandler };
+const fetch = require('node-fetch');
 
-
-export async function verifyEmail(req, res) {
+const verifyEmailHandler = async (req, res) => {
   try {
     const { email } = req.body;
 
@@ -56,7 +56,7 @@ export async function verifyEmail(req, res) {
       ]
     };
 
-    // === 3. Send JSON to Salesforce ===
+    // === 3. Return standardized JSON ===
     res.status(200).json(result);
 
   } catch (err) {
@@ -66,4 +66,6 @@ export async function verifyEmail(req, res) {
       stack: err.stack
     });
   }
-}
+};
+
+module.exports = { verifyEmailHandler };
