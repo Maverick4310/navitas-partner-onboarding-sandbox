@@ -120,38 +120,39 @@ async function verifyWebsiteHandler(req, res) {
       score -= 10;
     }
 
-    // === 3) Google Safe Browsing Check ===
-    if (gsbKey) {
-      try {
-        const gsbUrl = `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${encodeURIComponent(gsbKey)}`;
-        const gsbBody = {
-          client: { clientId: 'navitas', clientVersion: '1.0' },
-          threatInfo: {
-            threatTypes: [
-              'MALWARE',
-              'SOCIAL_ENGINEERING',
-              'UNWANTED_SOFTWARE',
-              'POTENTIALLY_HARMFUL_APPLICATION'
-            ],
-            platformTypes: ['ANY_PLATFORM'],
-            threatEntryTypes: ['URL'],
-            threatEntries: [{ url: `https://${cleanDomain}` }]
-          }
-        };
-        const gsbResp = await axios.post(gsbUrl, gsbBody, { timeout: 8000 });
-        if (gsbResp.data && gsbResp.data.matches && gsbResp.data.matches.length > 0) {
-          summary.push('⚠️ Flagged by Google Safe Browsing for malware/phishing');
-          score -= 30;
-        } else {
-          summary.push('No threats found (Google Safe Browsing)');
-          score += 10;
-        }
-      } catch (e) {
-        console.warn(`GSB check failed: ${e.message}`);
+// === 3) Google Safe Browsing Check ===
+if (gsbKey) {
+  try {
+    const gsbUrl = `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${encodeURIComponent(gsbKey)}`;
+    const gsbBody = {
+      client: { clientId: 'navitas', clientVersion: '1.0' },
+      threatInfo: {
+        threatTypes: [
+          'MALWARE',
+          'SOCIAL_ENGINEERING',
+          'UNWANTED_SOFTWARE',
+          'POTENTIALLY_HARMFUL_APPLICATION'
+        ],
+        platformTypes: ['ANY_PLATFORM'],
+        threatEntryTypes: ['URL'],
+        threatEntries: [{ url: website }]   // <-- use full URL exactly as sent in request
       }
+    };
+    const gsbResp = await axios.post(gsbUrl, gsbBody, { timeout: 10000 });
+    if (gsbResp.data && gsbResp.data.matches && gsbResp.data.matches.length > 0) {
+      summary.push('⚠️ Flagged by Google Safe Browsing for malware/phishing');
+      score -= 30;
     } else {
-      summary.push('Google Safe Browsing key not configured');
+      summary.push('No threats found (Google Safe Browsing)');
+      score += 10;
     }
+  } catch (e) {
+    console.warn(`GSB check failed: ${e.message}`);
+  }
+} else {
+  summary.push('Google Safe Browsing key not configured');
+}
+
 
     // === 4) Finalize score ===
     if (score > 100) score = 100;
