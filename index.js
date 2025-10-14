@@ -13,8 +13,11 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+// === Imports ===
 const { forwardToSalesforce } = require('./src/services/salesforceProxy');
 const { verifyWebsiteHandler } = require('./src/services/websiteVerifier');
+const { verifyEmailHandler } = require('./src/services/emailVerifier'); // 🆕 Add this line
+
 
 const app = express();
 
@@ -34,6 +37,9 @@ app.post('/onboarding', forwardToSalesforce);
 
 // === Website Verification endpoint (IP2WHOIS) ===
 app.post('/verifyWebsite', verifyWebsiteHandler);
+
+// === Email Verification endpoint (EmailRep) ===
+app.post('/verifyEmail', verifyEmailHandler); // 🆕 Add this route
 
 // === Start server ===
 const PORT = process.env.PORT || 3000;
