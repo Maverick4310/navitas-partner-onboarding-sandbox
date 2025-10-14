@@ -141,7 +141,7 @@ if (gsbKey) {
     const gsbResp = await axios.post(gsbUrl, gsbBody, { timeout: 10000 });
     if (gsbResp.data && gsbResp.data.matches && gsbResp.data.matches.length > 0) {
       summary.push('⚠️ Flagged by Google Safe Browsing for malware/phishing');
-      score -= 30;
+      score -= 60;
     } else {
       summary.push('No threats found (Google Safe Browsing)');
       score += 10;
