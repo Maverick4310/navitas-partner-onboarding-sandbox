@@ -2,12 +2,12 @@
  * websiteVerifier.js
  * --------------------------------------------------------
  * Purpose:
- *  - Evaluate website legitimacy using IP2WHOIS API
- *  - Determine domain age, registrar, and nameserver info
- *  - Return structured result for Salesforce Note creation
+ *  - Evaluate website legitimacy using IP2WHOIS + Google Safe Browsing API
+ *  - Return risk score and human-readable summary
  * --------------------------------------------------------
- * Required Env Vars:
- *  - IP2WHOIS_KEY (from ip2whois.com)
+ * Env Vars required:
+ *  - IP2WHOIS_KEY
+ *  - GSB_API_KEY
  * Optional:
  *  - VERIFIER_DEBUG=true
  * --------------------------------------------------------
@@ -22,7 +22,8 @@ async function verifyWebsiteHandler(req, res) {
     return res.status(400).json({ error: true, message: 'Website URL is required.' });
   }
 
-  const apiKey = process.env.IP2WHOIS_KEY;
+  const whoisKey = process.env.IP2WHOIS_KEY;
+  const gsbKey = process.env.GSB_API_KEY;
   const debug = process.env.VERIFIER_DEBUG === 'true';
 
   try {
@@ -32,36 +33,34 @@ async function verifyWebsiteHandler(req, res) {
       .trim()
       .toLowerCase();
 
-    if (debug) console.log(`Checking WHOIS for: ${cleanDomain}`);
+    if (debug) console.log(`🔍 Verifying ${cleanDomain}`);
+
+    let summary = [];
+    let score = 50;
 
     // === DNS Lookup ===
     let resolvedIP = null;
     try {
       const dnsRes = await dns.lookup(cleanDomain);
       resolvedIP = dnsRes.address;
+      summary.push(`Resolves to IP ${resolvedIP}`);
     } catch (e) {
-      if (debug) console.warn(`DNS lookup failed for ${cleanDomain}: ${e.message}`);
+      if (debug) console.warn(`DNS lookup failed: ${e.message}`);
     }
 
-    // === WHOIS Lookup ===
+    // === 1) IP2WHOIS Check ===
     let whoisData = {};
-    if (!apiKey) {
-      return res
-        .status(500)
-        .json({ error: true, message: 'Missing IP2WHOIS_KEY environment variable.' });
+    if (whoisKey) {
+      try {
+        const url = `https://api.ip2whois.com/v2?key=${encodeURIComponent(whoisKey)}&domain=${encodeURIComponent(cleanDomain)}`;
+        const resp = await axios.get(url, { timeout: 10000 });
+        whoisData = resp.data || {};
+        if (debug) console.log('WHOIS:', whoisData);
+      } catch (e) {
+        console.warn(`WHOIS lookup failed for ${cleanDomain}: ${e.message}`);
+      }
     }
 
-    try {
-      const url = `https://api.ip2whois.com/v2?key=${encodeURIComponent(apiKey)}&domain=${encodeURIComponent(cleanDomain)}`;
-      const response = await axios.get(url, { timeout: 10000 });
-      whoisData = response.data || {};
-      if (debug) console.log('WHOIS response:', whoisData);
-    } catch (err) {
-      console.error(`WHOIS request failed for ${cleanDomain}: ${err.message}`);
-      return res.status(500).json({ error: true, message: 'IP2WHOIS request failed.' });
-    }
-
-    // === Compute domain age ===
     const ageDays =
       whoisData.domain_age ||
       (whoisData.create_date
@@ -69,36 +68,23 @@ async function verifyWebsiteHandler(req, res) {
         : 0);
     const ageYears = (ageDays / 365).toFixed(1);
 
-    // === Scoring ===
-    let score = 50;
-    const summary = [];
-
     if (ageDays > 0) {
       summary.push(`Domain active for ${ageYears} years (since ${whoisData.create_date?.split('T')[0] || 'unknown'})`);
       if (ageDays < 90) score -= 15;
       else if (ageDays < 365) score -= 5;
-      else if (ageDays >= 365) score += 20;
+      else score += 20;
     } else {
       summary.push('Domain age unavailable');
     }
 
-    if (whoisData.registrar && whoisData.registrar.name) {
+    if (whoisData.registrar?.name) {
       summary.push(`Registrar: ${whoisData.registrar.name}`);
-      const reg = whoisData.registrar.name.toLowerCase();
-      if (reg.includes('corporate') || reg.includes('markmonitor') || reg.includes('csc')) {
-        score += 5;
-      }
+    }
+    if (whoisData.nameservers?.length) {
+      summary.push(`Nameservers: ${whoisData.nameservers.slice(0, 2).join(', ')}`);
     }
 
-    if (whoisData.nameservers && whoisData.nameservers.length) {
-      const ns = whoisData.nameservers.slice(0, 2).join(', ');
-      summary.push(`Nameservers: ${ns}`);
-      const nsText = whoisData.nameservers.join(' ').toLowerCase();
-      if (nsText.includes('cloudflare') || nsText.includes('google') || nsText.includes('aws')) {
-        score += 3;
-      }
-    }
-
+    // === 2) HTTPS Check ===
     if (website.toLowerCase().startsWith('https://')) {
       summary.push('Valid HTTPS detected');
       score += 10;
@@ -107,18 +93,45 @@ async function verifyWebsiteHandler(req, res) {
       score -= 10;
     }
 
-    if (resolvedIP) summary.push(`Resolves to IP ${resolvedIP}`);
+    // === 3) Google Safe Browsing Check ===
+    if (gsbKey) {
+      try {
+        const gsbUrl = `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${encodeURIComponent(gsbKey)}`;
+        const gsbBody = {
+          client: { clientId: 'navitas', clientVersion: '1.0' },
+          threatInfo: {
+            threatTypes: [
+              'MALWARE',
+              'SOCIAL_ENGINEERING',
+              'UNWANTED_SOFTWARE',
+              'POTENTIALLY_HARMFUL_APPLICATION'
+            ],
+            platformTypes: ['ANY_PLATFORM'],
+            threatEntryTypes: ['URL'],
+            threatEntries: [{ url: website }]
+          }
+        };
+        const gsbResp = await axios.post(gsbUrl, gsbBody, { timeout: 8000 });
+        if (gsbResp.data && gsbResp.data.matches && gsbResp.data.matches.length > 0) {
+          summary.push('⚠️ Flagged by Google Safe Browsing for malware/phishing');
+          score -= 30;
+        } else {
+          summary.push('No threats found (Google Safe Browsing)');
+          score += 10;
+        }
+      } catch (e) {
+        console.warn(`GSB check failed: ${e.message}`);
+      }
+    } else {
+      summary.push('Google Safe Browsing key not configured');
+    }
 
-    // Clamp score
+    // === 4) Finalize score ===
     if (score > 100) score = 100;
     if (score < 0) score = 0;
 
     const status =
-      score >= 80
-        ? 'Likely Legitimate'
-        : score >= 50
-        ? 'Needs Review'
-        : 'Potentially Fraudulent';
+      score >= 80 ? 'Likely Legitimate' : score >= 50 ? 'Needs Review' : 'Potentially Fraudulent';
     const riskLevel =
       status === 'Likely Legitimate'
         ? 'Low'
@@ -135,9 +148,10 @@ async function verifyWebsiteHandler(req, res) {
       timestamp: new Date().toISOString()
     };
 
+    if (debug) console.log('✅ Verification Result:', result);
     return res.status(200).json(result);
   } catch (err) {
-    console.error('verifyWebsiteHandler error:', err.message);
+    console.error('verifyWebsiteHandler error:', err);
     return res.status(500).json({ error: true, message: err.message });
   }
 }
